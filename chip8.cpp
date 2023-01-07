@@ -3,17 +3,21 @@
 #define DISPLAY_W 64
 #define DISPLAY_H 32
 
+//some instruction have different behaviours in the CHIP-8 and CHIP-48 languages. this flag sets which behaviour to use.
+#define CHIP_48 0 
+
+
 //MEMORY
 uint8_t memory[0x1000] = {0};
-//interprete usa i primi 512 byte, quindi i programmi inziano dalla location 0x200 inclusa (alcuni da 0x600)
-////gli ultimi 256 byte (0xF00-0xFFF) sono usati per il display
-////i 96 byte prima del display (0xEA0-0xEFF) sono riservati per il call stack
+//programs start @ location 0x200 included (some from 0x600)
+//last 256 bytes (0xF00-0xFFF) are for the display
+//96 bytes before display (0xEA0-0xEFF) are reserved for the call stack
 
 //REGISTERS
 uint8_t V[16], delay_timer, sound_timer, stack_pointer;
-//V: vanno da V0 a VF; VF è usato come flag per alcune istruzioni
+//V: V0 to VF; VF is a flag for some instructions
 uint16_t I, PC, stack[16];
-//I: contiene indirizzi a memoria, quindi solo gli ultimi 12 bit sono usati
+//I: contains memory addresses, only last 12 bit are used
 //stack: LIFO
 
 //DISPLAY
@@ -37,7 +41,7 @@ uint8_t default_font[80] = {
 	0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
 	0xF0, 0x80, 0xF0, 0x80, 0x80  // F
 };
-//to put in memory from 050 to 09F
+//to put in memory from 0x050 to 0x09F
 
 
 int cycle(){
@@ -60,84 +64,106 @@ int cycle(){
 	//EXECUTE
 	switch (opcode){
 		case 0x0000:
-		//manages 0x0NNN opcodes
-			if(nn == 0x00E0){ //clear screen
+		switch(nn){
+			case 0x00E0:
 				for(int i = 0; i <= DISPLAY_W; i++)
-					for(int j = 0; j <= DISPLAY_H; j++){
+					for(int j = 0; j <= DISPLAY_H; j++)
 						display[i][j] = 0;
-						PC += 2;
-					}
-			} else
-			if(nn == 0x00EE){ //return from subroutine
+				PC += 2;
+			break;
+			case 0x00EE:
 				stack_pointer -= 1;
 				PC = stack[stack_pointer];
-			}
+			break;
+		}
 		break;
 		
-		case 0x1000: //0x1NNN JUMP to NNN
+		case 0x1000:
 			PC = nnn;
 		break;
 
-		case 0x2000: //call subroutine at location NNN
+		case 0x2000:
 			stack_pointer += 1;
 			stack[stack_pointer] = PC;
 			PC = nnn;
 		break;
 
-		case 0x3000: //3XNN skip if Vx == nn
+		case 0x3000:
 			if(V[x] == nn)
 				PC += 2;
 		break;
 
-		case 0x4000: //4XNN skip if Vx != nn
+		case 0x4000:
 			if(V[x] != nn)
 				PC += 2;
 		break;
 
-		case 0x5000: //5XY0 skip if Vx == Vy
+		case 0x5000:
 			if(V[x] == V[y])
 				PC += 2;
 		break;
 
-		case 0x9000: //9XY0 skip if Vx != Vy
+		case 0x9000:
 			if(V[x] != V[y])
 				PC += 2;
 		break;
 
-		case 0x6000: //6XNN set VX to NN
+		case 0x6000:
 			V[x] = nn;
 		break;
 
-		case 0x7000: //7XNN add NN to VX (doesn't affect carry flag)
+		case 0x7000:
 			V[x] += nn;
 		break;
 
-		case 0x8000: //logical and arithmetic instructions
-		switch(n)
-			case 0x0://set Vx to Vy
+		case 0x8000: //8XYN logical and arithmetic instructions
+		switch(n){
+			case 0x0:
 				V[x] = V[y];
 			break;
-			case 0x1://Vx = OR of Vx and Vy
+			case 0x1:
 				V[x] |= V[y];
 			break;
-			case 0x2://Vx = AND of Vx and Vy
+			case 0x2:
 				V[x] &= V[y];
 			break;
-			case 0x3://Vx = XOR of Vx and Vy
+			case 0x3:
 				V[x] ^= V[y];
 			break;
-			case 0x4://add NN to VX (affects carry flag (VF))
-				
+			case 0x4: //Vx = Vx + Vy (affects carry flag (VF))
+				V[0xF] = (V[x] + V[y] > 255) ? 1 : 0;
+				V[x] += V[y];
 			break;
+			case 0x5: //Vx = Vx - Vy (affects carry flag (VF))
+				V[0xF] = (V[x] > V[y]) ? 1 : 0;
+				V[x] -= V[y];
+			break;
+			case 0x6: //Vx = Vy; Vx >> 1; Vf = shifted bit; (AMBIGUOUS INSTRUCTION!!!)
+				if(!CHIP_48)
+					V[x] = V[y];
+				V[0xF] = V[x] & 0x0001;
+				V[x] = V[x] >> 1;
+			break;
+			case 0x7: //Vx = Vy - Vx (affects carry flag (VF))
+				V[0xF] = (V[y] > V[x]) ? 1 : 0;
+				V[x] = V[y] - V[x];
+			break;
+			case 0xE://Vx = Vy; Vx << 1; Vf = shifted bit; (AMBIGUOUS INSTRUCTION!!!)
+				if(!CHIP_48)
+					V[x] = V[y];
+				V[0xF] = V[x] & 0x0001;
+				V[x] = V[x] << 1;
+			break;
+		}
+		break;
+
+		case 0xA000:
+			I = nnn;
+			PC += 2;
 		break;
 	}
 }
 
 
 
-
-
-
-
-
-
+//FIXME: program counter increment after instruction execution
